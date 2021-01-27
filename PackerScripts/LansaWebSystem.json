@@ -1,0 +1,142 @@
+{
+  "variables": {
+    "aws_access_key": "{{env `aws_id`}}",
+    "aws_secret_key": "{{env `aws_key`}}",
+    "aws_region": "ap-southeast-2",
+    "aws_instance_type": "m3.medium",
+    "chef_recipe_location": "..\\ChefCookbooks\\",
+    "script_location": "..\\scripts\\",
+    "license_key": "{{env `cloud_license_key`}}",
+    "git_branch": "{{env `cloud_git_branch`}}",
+    "user_directory": "{{env `userprofile`}}"
+  },
+  "builders": [{
+    "type": "amazon-ebs",
+    "access_key": "{{user `aws_access_key`}}",
+    "secret_key": "{{user `aws_secret_key`}}",
+    "region": "{{user `aws_region`}}",
+    "source_ami": "ami-6b8df551",
+    "instance_type": "{{user `aws_instance_type`}}",
+    "ssh_username": "Administrator",
+    "ssh_timeout": "10m",
+    "ssh_private_key_file": "{{user `user_directory`}}/.ssh/Linux-keypair.pem",
+    "ami_name": "LANSA Scalable License {{isotime \"20060102-1504\"}}",
+    "ami_virtualization_type": "hvm"
+  }],
+  
+  "provisioners": [
+  {
+    "type": "shell",
+    "inline": [ 
+      "cmd /c \"md c:\\packerTemp\"",
+      "cmd /c \"md c:\\recipes\\chef-repo\\cookbooks\"",
+      "cmd /c \"md c:\\lansa\"",
+      "cmd /c schtasks /change /TN \"\\Microsoft\\windows\\application Experience\\ProgramDataUpdater\" /DISABLE" ]
+  },
+  {
+    "type": "file",
+    "source": "chef-client-12.1.1-1.msi",
+    "destination": "c:\\packerTemp\\chef-client-12.1.1-1.msi"
+  },
+  {
+    "type": "shell",
+    "pause_before": "30s",
+    "inline": [
+      "cmd /c \"msiexec /quiet /i c:\\packerTemp\\chef-client-12.1.1-1.msi\"" ]
+  },
+  {
+    "type": "file",
+    "source": "{{user `chef_recipe_location`}}VLWebServer",
+    "destination": "/cygdrive/c/recipes/chef-repo/cookbooks/VLWebServer"
+  },
+  {
+    "type": "file",
+    "source": "{{user `chef_recipe_location`}}windows",
+    "destination": "/cygdrive/c/recipes/chef-repo/cookbooks/windows"
+  },
+  {
+    "type": "file",
+    "source": "{{user `chef_recipe_location`}}chef_handler",
+    "destination": "/cygdrive/c/recipes/chef-repo/cookbooks/chef_handler"
+  },
+  {
+    "type": "file",
+    "source": "{{user `chef_recipe_location`}}chocolatey",
+    "destination": "/cygdrive/c/recipes/chef-repo/cookbooks/chocolatey"
+  },
+  {
+    "type": "file",
+    "source": "{{user `chef_recipe_location`}}iis",
+    "destination": "/cygdrive/c/recipes/chef-repo/cookbooks/iis"
+  },
+  {
+    "type": "file",
+    "source": "{{user `script_location`}}getchoco.ps1",
+    "destination": "c:\\recipes\\getchoco.ps1"
+  },
+  {
+    "type": "shell",
+    "pause_before": "10s",
+    "inline": [
+      "export PATH=$PATH:/cygdrive/c/opscode/chef/bin:/cygdrive/c/opscode/chef/embedded/bin",
+      "export TEMP=/cygdrive/c/packerTemp",
+      "cd /cygdrive/c/recipes/chef-repo/cookbooks",
+      "cmd /c \"chef-client -z -o VLWebServer::MainRecipe\"" ]
+  },
+  {
+    "type": "file",
+    "source": "LANSAScalableLicense.pfx",
+    "destination": "c:\\packerTemp\\LANSAScalableLicense.pfx"
+  },
+  {
+    "type": "file",
+    "source": "LANSAIntegratorLicense.pfx",
+    "destination": "c:\\packerTemp\\LANSAIntegratorLicense.pfx"
+  },
+  {
+    "type": "file",
+    "source": "{{user `script_location`}}installGit.ps1",
+    "destination": "c:\\packerTemp\\installGit.ps1"
+  },
+  {
+    "type": "shell",
+    "start_retry_timeout": "5m",
+    "inline": [
+      "shutdown /r /f /d p:4:1 /c \"Packer Reboot\"" ]
+  },
+  {
+    "type": "shell",
+    "pause_before": "5m",
+    "inline": [
+      "powershell \"Set-ExecutionPolicy Unrestricted -Scope CurrentUser\"",
+      "powershell \"c:\\packerTemp\\installGit.ps1 {{user `git_branch`}}\"",
+      "powershell \"c:\\lansa\\scripts\\createLansaScalableLicense.ps1 {{user `license_key`}}\"",
+      "powershell \"c:\\lansa\\scripts\\createLansaIntegratorLicense.ps1 {{user `license_key`}}\"",
+      "powershell \"c:\\lansa\\scripts\\installAwsSdk.ps1 c:\\packerTemp\"",
+      "powershell \"c:\\lansa\\scripts\\scheduleTasks.ps1\"",
+      "powershell \"c:\\lansa\\scripts\\Get-StartupCmds.ps1\"",
+      "powershell \"c:\\lansa\\scripts\\windowsUpdatesSettings.ps1\"",
+      "powershell \"c:\\lansa\\scripts\\win-updates.ps1\"" ]
+  },
+  {
+    "type": "shell",
+    "pause_before": "8m",
+    "inline": [
+      "cmd /c \"sc triggerinfo w32time start/networkon stop/networkoff\"",
+      "cmd /c \"C:\\Windows\\Microsoft.NET\\Framework\\v4.0.30319\\Ngen executequeueditems\"",
+      "cmd /c \"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\Ngen executequeueditems\"",
+      "powershell \"c:\\lansa\\scripts\\Ec2ConfigSettings.ps1 c:\\packerTemp\"",
+      "powershell \"Set-ExecutionPolicy Restricted -Scope CurrentUser\"" ]
+  },
+  {
+    "type": "shell",
+    "inline": [
+      "cmd /c \"rd /S/Q c:\\PackerTemp\"",
+      "cmd /c \"del /F c:\\Progra~1\\Amazon\\Ec2ConfigService\\Logs\\*.txt\"" ]
+  },
+  {
+    "type": "shell",
+    "inline": [
+      "cmd /c \"c:\\Progra~1\\Amazon\\Ec2ConfigService\\ec2config.exe -sysprep\"" ]
+  }]
+}
